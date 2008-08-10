@@ -1,6 +1,6 @@
 use strict;
 use lib "t/lib";
-use Test::More (tests => 9);
+use Test::More (tests => 10);
 
 BEGIN
 {
@@ -39,4 +39,19 @@ EOXML
     is($attr, "hoge");
     $obj->attribute("fuga");
     is($obj->attribute, "fuga");
+}
+
+{
+    my $xml = <<EOXML;
+<food attribute="hoge" xmlns="http://www.w3.org/2005/Atom">
+<title>Hoge</title>
+<multi>multi1</multi>
+<multi>multi2</multi>
+<multi>multi3</multi>
+<multi>multi4</multi>
+</food>
+EOXML
+
+    my $obj = eval { Test::MxD::Simple->new(node => $xml) };
+    like($@, qr/given node does not have required root node/);
 }

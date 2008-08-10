@@ -1,11 +1,18 @@
-# $Id: /mirror/coderepos/lang/perl/MooseX-DOM/trunk/lib/MooseX/DOM.pm 68056 2008-08-08T07:06:00.411817Z daisuke  $
+# $Id: /mirror/coderepos/lang/perl/MooseX-DOM/trunk/lib/MooseX/DOM.pm 68141 2008-08-10T15:15:50.695822Z daisuke  $
 
 package MooseX::DOM;
 use strict;
 use Moose::Util;
 
 our $AUTHORITY = 'cpan:DMAKI';
-our $VERSION   = '0.00001';
+our $VERSION   = '0.00002';
+
+BEGIN {
+    my $engine = $ENV{MOOSEX_DOM_ENGINE} || 'MooseX::DOM::LibXML';
+    Class::MOP::load_class( $engine );
+
+    constant->import(ENGINE => $engine);
+}
 
 sub import {
     my ($class, %args) = @_;
@@ -13,17 +20,22 @@ sub import {
     my $caller = caller(0);
     return unless $caller->can('meta');
 
-    $args{engine} ||= 'LibXML';
-    my $engine = $args{engine};
-    if ($engine !~ s/^\+//) {
-        $engine = join('::', __PACKAGE__, $engine);
-    }
-
+    my $engine = &ENGINE;
     Moose::Util::apply_all_roles($caller->meta, $engine);
 
     my $exporter = join('::', $engine, 'export_dsl');
     goto &$exporter;
 }
+
+sub unimport {
+    my ($class, %args) = @_;
+
+    my $engine = &ENGINE;
+    my $unexporter = join('::', $engine, 'unexport_dsl' );
+    goto &$unexporter;
+}
+
+    
 
 1;
 
@@ -42,6 +54,7 @@ MooseX::DOM - Simplistic Object XML Mapper
   has_dom_child 'title';
 
   no Moose;
+  no MoooseX::DOM;
 
   my $obj = MyObject->new(node => <<EOXML);
   <feed>
@@ -59,6 +72,15 @@ This module is intended to be used in conjunction with other modules
 that encapsulate XML data (for example, XML feeds).
 
 =head1 DECLARATION
+
+=head2 has_dom_root $name[, %opts]
+
+Specifies that the given XML have the specified tag. This specification is
+also used when creating new root node for creating the underlying XML
+
+  has_dom_root $name => (
+    # attributes => { ... }
+  );
 
 =head2 has_dom_attr $name[, %opts]
 
@@ -82,10 +104,33 @@ namespace uri.
 Specifying C<tag> allows MooseX::DOM to look for the tag name given in C<tag>
 while making the generated method name as C<$name>
 
-The optional C<filter> should be a subroutine that takes the object itself
-as the first parameter, and the DOM node(s) as the rest of the parameters.
-You are allowed to transform the node as you like. By default, a filter
-that converts the node to its text content is used.
+The optional C<filter> parameter should be a subroutine that takes the object 
+itself as the first parameter, and the DOM node(s) as the rest of the 
+parameters.  You are allowed to transform the node as you like. By default, 
+a filter that converts the node to its text content is used.
+
+  has_dom_child 'foo' => (
+    filter => sub {
+      my ($self, $node) = @_;
+      # return whatever you want to return, perhaps transforming $node
+    }
+  );
+
+The optional C<create> parameter should be a subroutine that does the
+does the actual insertion of the new node, given the arguments.
+By default it expects a list of text argument, and creates a child node
+with those arguments.
+
+  has_dom_child 'foo' => (
+    create => sub {
+      my($self, %args) = @_;
+      # keys in %args:
+      #   child
+      #   namespace
+      #   tag
+      #   value
+    }
+  );
 
 =head2 has_dom_children 
 
@@ -97,18 +142,47 @@ given name
   $obj->foo(); # Returns a list of values for each child element foo
   $obj->foo(qw(1 2 3)); # Discards old values of foo, and create new nodes
 
-%opts may contain C<namespace>, C<tag>, and C<filter>
+%opts may contain C<namespace>, C<tag>, C<filter>, and C<create>
 
-Specifying C<namespace> forces MooseX::DOM to look for tags in a specific
-namespace uri.
+The optional C<namespace> parameter forces MooseX::DOM to look for tags in a 
+specific namespace uri.
 
-Specifying C<tag> allows MooseX::DOM to look for the tag name given in C<tag>
-while making the generated method name as C<$name>
+The optional C<tag> parameter allows MooseX::DOM to look for the tag name given 
+in C<tag> while making the generated method name as C<$name>
 
-The optional C<filter> should be a subroutine that takes the object itself
-as the first parameter, and the DOM node(s) as the rest of the parameters.
-You are allowed to transform the node as you like. By default, a filter
-that converts the node to its text content is used.
+The optional C<filter> parameter should be a subroutine that takes the object 
+itself as the first parameter, and the DOM node(s) as the rest of the 
+parameters.  You are allowed to transform the node as you like. By default, 
+a filter that converts the node to its text content is used.
+
+  has_dom_children 'foo' => (
+    filter => sub {
+      my ($self, @nodes) = @_;
+      # return whatever you want to return, perhaps transforming @nodes
+    }
+  );
+
+The optional C<create> parameter should be a subroutine that does the
+does the actual insertion of the new nodes, given the arguments.
+By default it expects a list of text arguments, and creates child nodes
+with those arguments.
+
+  has_dom_children 'foo' => (
+    create => sub {
+      my($self, %args) = @_;
+      # keys in %args:
+      #   children
+      #   namespace
+      #   tag
+      #   values
+    }
+  );
+
+=head2 has_dom_content $name
+
+If your node only contains text data (that is, your root node does not have any
+subsequent element nodes as its child), you can access the text data directly
+with this declaration
 
 =head1 AUTHOR
 

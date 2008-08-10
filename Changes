@@ -1,5 +1,13 @@
 Changes
 =======
 
+0.00002 - 11 Aug 2008
+  * Implement unimport(), so you can do 'no MooseX::DOM'
+  * Implement has_dom_root
+  * Implement has_dom_content
+  * Automatically generate root node upon set(), if has_dom_root has been
+    prorperly declared.
+  * Refactor get/set operations so you can specify them at declaration time
+
 0.00001 - 08 Aug 2008
   * Initial release
