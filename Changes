@@ -1,6 +1,10 @@
 Changes
 =======
 
+0.00003 - 11 Aug 2008
+  * Implement from_xml/from_file as alternate constructors
+  * Fix Makefile.PL dependencies
+
 0.00002 - 11 Aug 2008
   * Implement unimport(), so you can do 'no MooseX::DOM'
   * Implement has_dom_root

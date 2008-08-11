@@ -1,11 +1,11 @@
-# $Id: /mirror/coderepos/lang/perl/MooseX-DOM/trunk/lib/MooseX/DOM.pm 68141 2008-08-10T15:15:50.695822Z daisuke  $
+# $Id: /mirror/coderepos/lang/perl/MooseX-DOM/trunk/lib/MooseX/DOM.pm 68161 2008-08-11T00:03:02.137385Z daisuke  $
 
 package MooseX::DOM;
 use strict;
 use Moose::Util;
 
 our $AUTHORITY = 'cpan:DMAKI';
-our $VERSION   = '0.00002';
+our $VERSION   = '0.00003';
 
 BEGIN {
     my $engine = $ENV{MOOSEX_DOM_ENGINE} || 'MooseX::DOM::LibXML';

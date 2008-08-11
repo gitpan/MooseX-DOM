@@ -1,4 +1,4 @@
-# $Id: /mirror/coderepos/lang/perl/MooseX-DOM/trunk/lib/MooseX/DOM/LibXML.pm 68140 2008-08-10T15:13:04.058577Z daisuke  $
+# $Id: /mirror/coderepos/lang/perl/MooseX-DOM/trunk/lib/MooseX/DOM/LibXML.pm 68159 2008-08-10T23:52:30.531394Z daisuke  $
 
 package MooseX::DOM::LibXML;
 use Moose::Role;
@@ -303,6 +303,15 @@ sub BUILD {
         }
     }
     return $self;
+}
+
+sub from_xml {
+    my $class = shift;
+    return $class->new(node => XML::LibXML->new->parse_string($_[0])->documentElement);
+}
+sub from_file {
+    my $class = shift;
+    return $class->new(node => XML::LibXML->new->parse_file($_[0])->documentElement);
 }
 
 sub as_xml {
