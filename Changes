@@ -1,6 +1,11 @@
 Changes
 =======
 
+0.00004 - 12 Aug 2008
+  * Refactored the core accessor functionality into MooseX::DOM::Meta::LibXML.
+    Most of the generated accessors are now proxies to the meta class.
+    (This stuff may change as I understand MOP better)
+
 0.00003 - 11 Aug 2008
   * Implement from_xml/from_file as alternate constructors
   * Fix Makefile.PL dependencies

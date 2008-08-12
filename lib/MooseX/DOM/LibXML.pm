@@ -1,8 +1,9 @@
-# $Id: /mirror/coderepos/lang/perl/MooseX-DOM/trunk/lib/MooseX/DOM/LibXML.pm 68159 2008-08-10T23:52:30.531394Z daisuke  $
+# $Id: /mirror/coderepos/lang/perl/MooseX-DOM/trunk/lib/MooseX/DOM/LibXML.pm 68283 2008-08-12T02:34:53.003080Z daisuke  $
 
 package MooseX::DOM::LibXML;
 use Moose::Role;
 use MooseX::DOM::LibXML::ContextNode;
+use MooseX::DOM::Meta::LibXML;
 
 use constant DEFAULT_NAMESPACE_PREFIX => "#default";
 
@@ -19,6 +20,18 @@ has 'namespaces' => (
 );
 
 no Moose;
+
+sub init_meta {
+    # Only MooseX::DOM knows the true caller, so we expect it to
+    # provide us with one
+    my ($class, $caller) = @_;
+
+    Moose::init_meta( 
+        $caller, 
+        undef,
+        'MooseX::DOM::Meta::LibXML'
+    );
+}
 
 sub BUILDARGS {
     my ($self, %args) = @_;
@@ -59,45 +72,17 @@ BOOTSTRAP: {
         return map { blessed $_ && $_->can('textContent') ? $_->textContent : $_ } @_;
     };
 
-    # Used only in has_dom_child, to create an element node from a text
-    my $text2element = Class::MOP::subname($subname->('text2element') => sub {
-        my ($self, %args) = @_;
-
-        my $child = $args{child};
-        my $value = $args{value};
-        my $namespace = $args{namespace};
-        my $tag = $args{tag};
-        my $node = $self->node;
-
-        my $nsuri = $self->namespaces->{ $namespace };
-        if (! $child) {
-            my $document = $node->ownerDocument;
-            $child = ($nsuri) ?
-                $document->createElementNS($nsuri, $tag) :
-                $document->createElement($tag)
-            ;
-            $node->appendChild($child);
-        }
-
-        $child->removeChildNodes();
-        $child->appendTextNode($value);
-    });
-
     # Used only in has_dom_children, to create a list of element nodes from
     # list of text
     my $text2elements = Class::MOP::subname($subname->('text2elements') => sub {
         my($self, %args) = @_;
 
-        my $children = $args{children};
         my $values = $args{values};
         my $namespace = $args{namespace};
         my $tag = $args{tag};
 
         my $node = $self->node;
 
-        if ($children) {
-            $node->removeChild($_) for @$children;
-        }
         my $nsuri = $self->namespaces->{ $namespace };
         my $document = $node->ownerDocument;
         my @children;
@@ -110,6 +95,7 @@ BOOTSTRAP: {
             push @children, $child;
             $node->appendChild($child);
         }
+        return @children;
     });
 
     my %exports = (
@@ -124,26 +110,20 @@ BOOTSTRAP: {
                 my $attrs = $args{attributes};
 
                 my $meta = $caller->meta;
-                $meta->{'$!dom_root'} = { tag => $tag, attributes => $attrs };
+                $meta->dom_root( { tag => $tag, attributes => $attrs } );
 
-                my $assert_root = sub {
-                    my $self = shift;
-                    my $node = shift || $self->node;
-                    if ($node && $node->getName ne $tag) {
-                        confess "given node does not have required root node $tag";
-                    }
-                };
-
+                # This needs to be done here so that the /applied/ class
+                # can use it instead of this class, which is a role
                 $meta->add_around_method_modifier(new => sub {
                     my $next = shift;
                     my $self = $next->(@_);
-                    $assert_root->($self);
+                    $self->meta->assert_root_node($self);
                     return $self;
                 });
                 $meta->add_after_method_modifier(node => sub {
                     my $self = shift;
                     if (@_) {
-                        $assert_root->($self, @_);
+                        $self->meta->assert_root($self, @_);
                     }
                 });
             });
@@ -176,18 +156,16 @@ BOOTSTRAP: {
                     $name = $args{accessor};
                 }
 
-                $caller->meta->{'%!dom_attributes'}->{$name} = 1;
+                $caller->meta->register_dom_attribute( $name );
+
                 my $method = $subname->($name, $caller);
                 $subassign->($method => sub {
                     my $self = shift;
-                    my $node = $self->node;
-                    return () unless $node;
-
+                    my $meta = $self->meta;
                     if (@_) {
-                        $node->setAttribute($name, $_[0]);
+                        $meta->set_dom_attribute( $self, $name, $_[0] );
                     }
-
-                    return $node->getAttribute($name);
+                    return $meta->get_dom_attribute( $self, $name );
                 });
             });
         },
@@ -202,23 +180,25 @@ BOOTSTRAP: {
                 if ($args{accessor}) {
                     $name = $args{accessor};
                 }
-                $caller->meta->{'%!dom_attributes'}->{$name} = 1;
+
+                $caller->meta->register_dom_child( $name => {
+                    tag => $tagname,
+                    namespace => $namespace,
+                    filter => $filter,
+                    create => $create
+                } );
+
                 my $method = $subname->($name, $caller);
 
                 # list accessor
                 $subassign->($method => sub {
                     my $self = shift;
-                    my $node = $self->node;
-                    my $nsuri = $self->namespaces->{ $namespace };
-                    my @children = ($nsuri) ?
-                        $node->getChildrenByTagNameNS($nsuri, $tagname):
-                        $node->getChildrenByTagName($tagname)
-                    ;
+                    my $meta = $self->meta;
                     if (@_) {
-                        $create->($self, children => \@children, values => \@_, namespace => $namespace, tag => $tagname);
+                        $meta->set_dom_children( $self, $name, @_ );
                     }
 
-                    return $filter->($self, @children);
+                    return $meta->get_dom_children( $self, $name );
                 });
             });
         },
@@ -230,35 +210,29 @@ BOOTSTRAP: {
                 my $namespace = $args{namespace} ||= DEFAULT_NAMESPACE_PREFIX;
                 my $tagname   = $args{tag} || $name;
                 my $filter    = $args{filter} || $textfilter;
-                my $create    = $args{create} || $text2element;
+                my $create    = $args{create} || $text2elements;
                 if ($args{accessor}) {
                     $name = $args{accessor};
                 }
 
-                my $meta = $caller->meta;
-                $meta->{'%!dom_attributes'}->{$name} = 1;
+                $caller->meta->register_dom_child( $name => {
+                    tag => $tagname,
+                    namespace => $namespace,
+                    filter => $filter,
+                    create => $create
+                } );
+
                 my $method = $subname->($name, $caller);
                 $subassign->($method => sub {
                     my $self = shift;
-
-                    my $node = $self->node;
-                    my $child;
-                    if ($node) {
-                        my $nsuri = $self->namespaces->{ $namespace };
-                        ($child) = ($nsuri) ?
-                            $node->getChildrenByTagNameNS($nsuri, $tagname):
-                            $node->getChildrenByTagName($tagname)
-                        ;
-                    }
-
+                    my $meta = $self->meta;
                     if (@_) {
-                        $self->__create_root_node();
-                        $create->( $self, child => $child, value => $_[0], namespace => $namespace, tag => $tagname);
+                        $meta->set_dom_children( $self, $name, @_ );
                     }
 
-                    my($ret) = $filter->( $self, $child );
-                    return $ret;
-                });
+                    my @ret = $meta->get_dom_children( $self, $name );
+                    return $ret[0];
+                } );
             });
         }
     );
@@ -293,18 +267,6 @@ BOOTSTRAP: {
     }
 }
 
-sub BUILD {
-    my ($self, $args) = @_;
-
-    if (my $attrs = $self->meta->{'%!dom_attributes'}) {
-        foreach my $attr (keys %$attrs) {
-            next unless defined $args->{$attr};
-            $self->$attr( $args->{ $attr } );
-        }
-    }
-    return $self;
-}
-
 sub from_xml {
     my $class = shift;
     return $class->new(node => XML::LibXML->new->parse_string($_[0])->documentElement);
@@ -317,23 +279,6 @@ sub from_file {
 sub as_xml {
     my $self = shift;
     $self->node->toString(1);
-}
-
-sub __create_root_node {
-    my $self = shift;
-    return if $self->node;
-
-    my $root = $self->meta->{'$!dom_root'};
-    confess "No root node defined" unless $root;
-
-    my $tag = $root->{tag};
-    my $attrs = $root->{attributes};
-    my $doc = XML::LibXML::Document->new( '1.0' => 'UTF-8' );
-    my $node = $doc->createElement($tag);
-    while (my($name, $value) = each %$attrs) {
-        $node->setAttribute($name, $value);
-    }
-    $self->node( MooseX::DOM::LibXML::ContextNode->new(node => $node) );
 }
 
 

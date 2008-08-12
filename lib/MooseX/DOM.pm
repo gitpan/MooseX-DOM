@@ -1,11 +1,12 @@
-# $Id: /mirror/coderepos/lang/perl/MooseX-DOM/trunk/lib/MooseX/DOM.pm 68161 2008-08-11T00:03:02.137385Z daisuke  $
+# $Id: /mirror/coderepos/lang/perl/MooseX-DOM/trunk/lib/MooseX/DOM.pm 68287 2008-08-12T03:01:31.558361Z daisuke  $
 
 package MooseX::DOM;
 use strict;
 use Moose::Util;
+use Carp ();
 
 our $AUTHORITY = 'cpan:DMAKI';
-our $VERSION   = '0.00003';
+our $VERSION   = '0.00004';
 
 BEGIN {
     my $engine = $ENV{MOOSEX_DOM_ENGINE} || 'MooseX::DOM::LibXML';
@@ -15,20 +16,30 @@ BEGIN {
 }
 
 sub import {
-    my ($class, %args) = @_;
-
+    my $class = shift;
     my $caller = caller(0);
-    return unless $caller->can('meta');
+
+    return if $caller eq 'main';
+
+    # if $caller is already meta-fied.
+    if ( $caller->can('meta') ) {
+        Carp::confess "You already have 'meta' initialized. you need to 'use MooseX::DOM' /instead/ of 'use Moose'";
+    }
 
     my $engine = &ENGINE;
+    $engine->init_meta( $caller );
     Moose::Util::apply_all_roles($caller->meta, $engine);
+    Moose->import( { into => $caller }, @_ );
 
     my $exporter = join('::', $engine, 'export_dsl');
     goto &$exporter;
 }
 
 sub unimport {
-    my ($class, %args) = @_;
+    my $class = shift;
+
+    my $caller = caller(0);
+    Moose->unimport( { into => $caller }, @_ );
 
     my $engine = &ENGINE;
     my $unexporter = join('::', $engine, 'unexport_dsl' );
@@ -48,7 +59,6 @@ MooseX::DOM - Simplistic Object XML Mapper
 =head1 SYNOPSIS
 
   package MyObject;
-  use Moose;
   use MooseX::DOM;
  
   has_dom_child 'title';
