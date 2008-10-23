@@ -1,198 +1,315 @@
-# $Id: /mirror/coderepos/lang/perl/MooseX-DOM/trunk/lib/MooseX/DOM.pm 68287 2008-08-12T03:01:31.558361Z daisuke  $
+# $Id: /mirror/coderepos/lang/perl/MooseX-DOM/trunk/lib/MooseX/DOM.pm 88873 2008-10-23T15:34:02.795690Z daisuke  $
 
 package MooseX::DOM;
 use strict;
-use Moose::Util;
-use Carp ();
+use warnings;
+use 5.008;
+use MooseX::DOM::Meta::Class;
 
 our $AUTHORITY = 'cpan:DMAKI';
-our $VERSION   = '0.00004';
-
-BEGIN {
-    my $engine = $ENV{MOOSEX_DOM_ENGINE} || 'MooseX::DOM::LibXML';
-    Class::MOP::load_class( $engine );
-
-    constant->import(ENGINE => $engine);
-}
+our $VERSION   = '0.00999';
 
 sub import {
     my $class = shift;
-    my $caller = caller(0);
+    my $caller = caller();
 
-    return if $caller eq 'main';
+    my $backend = 'MooseX::DOM::LibXML';
+    Class::MOP::load_class($backend);
 
-    # if $caller is already meta-fied.
-    if ( $caller->can('meta') ) {
-        Carp::confess "You already have 'meta' initialized. you need to 'use MooseX::DOM' /instead/ of 'use Moose'";
-    }
-
-    my $engine = &ENGINE;
-    $engine->init_meta( $caller );
-    Moose::Util::apply_all_roles($caller->meta, $engine);
-    Moose->import( { into => $caller }, @_ );
-
-    my $exporter = join('::', $engine, 'export_dsl');
-    goto &$exporter;
+    Moose::Util::MetaRole::apply_metaclass_roles(
+        for_class => $caller,
+        metaclass_roles => [ 'MooseX::DOM::Meta::Class' ]
+    );
+    $backend->setup($caller);
+    $class->export_keywords($caller);
 }
 
 sub unimport {
     my $class = shift;
+    my $caller = caller();
 
-    my $caller = caller(0);
-    Moose->unimport( { into => $caller }, @_ );
-
-    my $engine = &ENGINE;
-    my $unexporter = join('::', $engine, 'unexport_dsl' );
-    goto &$unexporter;
+    $class->unexport_keywords($caller);
 }
 
-    
+sub export_keywords {
+    my ($class, $caller) = @_;
 
+    my $exporter = Sub::Exporter::build_exporter({
+        into => $caller,
+        groups => { default => [ ':all' ] },
+        exports => [
+            dom_nodes      => sub { $class->build_dom_nodes($caller) },
+            dom_fetchnodes => sub { $class->build_dom_fetchnodes($caller) },
+            dom_to_class   => sub { $class->build_dom_to_class($caller) },
+            dom_value      => sub { $class->build_dom_value($caller) },
+        ]
+    });
+    $exporter->($class);
+}
+
+sub unexport_keywords {
+    my ($class, $caller) = @_;
+    my @keywords = qw(dom_nodes dom_fetchnodes dom_to_class dom_value);
+
+    { no strict 'refs';
+        foreach my $name (@keywords) {
+            if ( defined &{ $caller . '::' . $name }) {
+                delete ${ $caller . '::' }{$name};
+            }
+        }
+    }
+}
+
+sub build_dom_value {
+    my ($class, $caller) = @_;
+
+    return sub {
+        my $name = shift;
+        my $args = { @_ == 1 ? (fetch => {xpath => $_[0]}) : @_ };
+
+        my $fetch = $args->{fetch};
+        my $fetch_xpath = $fetch->{xpath} || $name;
+        my $meta = $caller->meta;
+        $meta->add_method(
+            $name,
+            Moose::Meta::Method->wrap(
+                package_name => $caller,
+                name         => $name,
+                body         => sub {
+                    my $self = shift;
+                    $self->dom_root->findvalue($fetch_xpath);
+                }
+            )
+        );
+    };
+}
+
+sub build_dom_nodes {
+    my ($class, $caller) = @_;
+
+    return sub {
+        my $name = shift;
+        my $args = { @_ == 1 ? (fetch => $_[0]) : @_ };
+
+        $args->{into} = $caller;
+        my @methods = (
+            $class->build_dom_nodes_accessor($name, $args),
+            $class->build_dom_nodes_appender($name, $args),
+        );
+
+        my $meta = $caller->meta;
+        foreach my $method (@methods) {
+            $meta->add_method($method->{name}, $method->{code});
+        }
+    }
+}
+
+sub build_dom_nodes_appender {
+    my ($class, $name, $args) = @_;
+
+    # I can't figure out this one automatically (I think). 
+    # just expect a code, and if I can't find it, not methods are
+    # returned to the callee
+    my $config = ref $args->{append} eq 'HASH' ? $args->{append} : 
+        { code => $args->{append} };
+    my $method = $config->{name} || "add_$name";
+    my $code = $config->{code};
+    my $ret;
+    if ($code) {
+        $ret = {
+            $method,
+            Moose::Meta::Method->wrap(
+                package_name => $args->{into},
+                name         => $method,
+                body         => $code
+            )
+        };
+    }
+    return $ret ? $ret : ();
+}
+
+sub build_dom_nodes_accessor {
+    my ($class, $name, $args) = @_;
+
+    my $fetch = $args->{fetch};
+    my $store = $args->{store};
+
+    if (! ref $fetch) {
+        my $xpath = $fetch;
+        $fetch = sub { shift->dom_root->findnodes($xpath) };
+    }
+
+    my $code = <<"    EOSUB";
+        sub {
+            my \$self = shift;
+            my \@ret = \$fetch->(\$self);
+    EOSUB
+    if ($store) {
+        $code .= <<"        EOSUB";
+            if (\@_) {
+                \$store->(\$self, \@_);
+            }
+        EOSUB
+    }
+
+    $code .= <<"    EOSUB";
+            return \@ret;
+        }
+    EOSUB
+    my $cv = eval $code; Carp::confess($@) if $@;
+
+    return {
+        name => $name,
+        code => Moose::Meta::Method->wrap(
+            package_name => $args->{into},
+            name         => $name,
+            body         => $cv,
+        )
+    };
+}
+
+sub build_dom_fetchnodes {
+    my ($class, $caller) = @_;
+
+    return sub {
+        my $args = {@_ == 1 ? (xpath => $_[0]) : @_};
+        my $filter = $args->{filter};
+        my $xpath  = $args->{xpath};
+        return $filter ?
+            sub {
+                my $self = shift;
+                return $filter->($self->dom_root->findnodes($xpath));
+            } :
+            sub {
+                my $self = shift;
+                return $self->dom_root->findnodes($xpath);
+            }
+    };
+}
+
+sub build_dom_to_class {
+    my ($class, $caller) = @_;
+
+    return sub {
+        my $args = {@_ == 1 ? (to_class => $_[0]) : @_};
+        my $to_class = $args->{to_class};
+        Class::MOP::load_class($to_class);
+        return sub {
+            map { $to_class->new($_) } @_;
+        }
+    }
+}
 1;
 
 __END__
 
 =head1 NAME
 
-MooseX::DOM - Simplistic Object XML Mapper
+MooseX::DOM - Easily Create DOM Based Objects
 
 =head1 SYNOPSIS
 
-  package MyObject;
-  use MooseX::DOM;
- 
-  has_dom_child 'title';
+    package RSS;
+    use Moose;
+    use MooseX::DOM;
 
-  no Moose;
-  no MoooseX::DOM;
+    dom_value 'version' => '@version';
+    dom_nodes 'items' => (
+        fetch => dom_fetchnodes(
+            xpath => 'channel/item',
+            filter => dom_to_class('RSS::Item')
+        )
+    );
 
-  my $obj = MyObject->new(node => <<EOXML);
-  <feed>
-    <title>Foo</title>
-  </feed>
-  EOXML
+    # or, easy way (just get some DOM nodes)
+    # dom_nodes 'items' => 'channel/items';
 
-  print $obj->title(), "\n"; # Foo
-  $obj->title('Bar');
-  print $obj->title(), "\n"; # Bar
+    # or, create your own way to fetch the nodes
+    # dom_nodes 'items' => (
+    #     fetch => sub { ... }
+    # );
+
+    no Moose;
+    no MooseX::DOM;
+
+    package RSS::Item;
+    use Moose;
+    use MooseX::DOM;
+
+    dom_value 'title';
+    dom_value 'description';
+    dom_value 'link';
+
+    no Moose;
+    no MooseX::DOM;
+
+    sub BUILDARGS {
+        my $class = shift;
+        my $args  = {@_ == 1? (dom_root => $_[0]) : @_};
+        return $args;
+    }
+
+    package main;
+
+    # parse_file() is automatically created for you.
+    my $rss = RSS->parse_file('rss.xml');
+    foreach my $item ($rss->items) {
+        print "item link  = ", $item->link, "\n";
+        print "item title = ", $item->title, "\n";
+    }
 
 =head1 DESCRIPTION
 
-This module is intended to be used in conjunction with other modules
-that encapsulate XML data (for example, XML feeds).
+MooseX::DOM is a tool that allows you to define classes that are based on
+XML DOM.
 
-=head1 DECLARATION
+=head1 PROVIDED DSL
 
-=head2 has_dom_root $name[, %opts]
+The following DSL is provided upon calling C<MooseX::DOM>. When 
+C<no MooseX::DOM> is used, these functions are removed from your namespace.
 
-Specifies that the given XML have the specified tag. This specification is
-also used when creating new root node for creating the underlying XML
+=head2 dom_nodes $name => %spec
 
-  has_dom_root $name => (
-    # attributes => { ... }
-  );
+Declares that a method named $name should be built, using the given spec.
+Returns a list of nodes, or what the filter argument trasnlates them to.
 
-=head2 has_dom_attr $name[, %opts]
+If %spec is omitted, $name is taken to be the xpath to fetch.
 
-Specifies that the object should contain an attribute by the given name
+=head2 dom_value $name => %spec
 
-=head2 has_dom_child $name[, %opts]
+Declares that a method named $name should be built, using the given spec.
+Returns the result of the fetch, whatever that may be.
 
-Specifies that the object should contain a single child by the given name.
-Will generate accessor that can handle set/get
+If %spec is omitted, $name is taken to be the xpath to fetch.
 
-  has_dom_child 'foo';
+=head2 dom_fetchnodes %spec
 
-  $obj->foo(); # get the value of child element foo
-  $obj->foo("bar"); # set the value of child element foo to bar
+Creates a closure that fetches some nodes
 
-%opts may contain C<namespace>, C<tag>, and C<filter>
+=head2 dom_to_class %spec
 
-Specifying C<namespace> forces MooseX::DOM to look for tags in a specific
-namespace uri.
+Creates a closure that transforms nodes to something else, typically an object.
 
-Specifying C<tag> allows MooseX::DOM to look for the tag name given in C<tag>
-while making the generated method name as C<$name>
+=head1 PROVIDED METHODS
 
-The optional C<filter> parameter should be a subroutine that takes the object 
-itself as the first parameter, and the DOM node(s) as the rest of the 
-parameters.  You are allowed to transform the node as you like. By default, 
-a filter that converts the node to its text content is used.
+The following methods are built onto your class automatically.
 
-  has_dom_child 'foo' => (
-    filter => sub {
-      my ($self, $node) = @_;
-      # return whatever you want to return, perhaps transforming $node
-    }
-  );
+=head2 parse_file
 
-The optional C<create> parameter should be a subroutine that does the
-does the actual insertion of the new node, given the arguments.
-By default it expects a list of text argument, and creates a child node
-with those arguments.
+=head2 parse_string
 
-  has_dom_child 'foo' => (
-    create => sub {
-      my($self, %args) = @_;
-      # keys in %args:
-      #   child
-      #   namespace
-      #   tag
-      #   value
-    }
-  );
+=head2 parse_fh
 
-=head2 has_dom_children 
+These methods allow you to parse a piece of XML, and build a MooseX::DOM
+object based on it.
 
-Specifies that the object should contain possibly multiple children by the
-given name
+=head2 dom_findnodes($xpath)
 
-  has_dom_children 'foo';
+Does a DOM XPath lookup. Returns a plain DOM object.
 
-  $obj->foo(); # Returns a list of values for each child element foo
-  $obj->foo(qw(1 2 3)); # Discards old values of foo, and create new nodes
+=head2 dom_findvalue($xpath)
 
-%opts may contain C<namespace>, C<tag>, C<filter>, and C<create>
-
-The optional C<namespace> parameter forces MooseX::DOM to look for tags in a 
-specific namespace uri.
-
-The optional C<tag> parameter allows MooseX::DOM to look for the tag name given 
-in C<tag> while making the generated method name as C<$name>
-
-The optional C<filter> parameter should be a subroutine that takes the object 
-itself as the first parameter, and the DOM node(s) as the rest of the 
-parameters.  You are allowed to transform the node as you like. By default, 
-a filter that converts the node to its text content is used.
-
-  has_dom_children 'foo' => (
-    filter => sub {
-      my ($self, @nodes) = @_;
-      # return whatever you want to return, perhaps transforming @nodes
-    }
-  );
-
-The optional C<create> parameter should be a subroutine that does the
-does the actual insertion of the new nodes, given the arguments.
-By default it expects a list of text arguments, and creates child nodes
-with those arguments.
-
-  has_dom_children 'foo' => (
-    create => sub {
-      my($self, %args) = @_;
-      # keys in %args:
-      #   children
-      #   namespace
-      #   tag
-      #   values
-    }
-  );
-
-=head2 has_dom_content $name
-
-If your node only contains text data (that is, your root node does not have any
-subsequent element nodes as its child), you can access the text data directly
-with this declaration
+Does a DOM XPath lookup. Returns whatever value the XPath results to.
 
 =head1 AUTHOR
 

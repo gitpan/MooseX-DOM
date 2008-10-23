@@ -1,6 +1,11 @@
 Changes
 =======
 
+0.00999_01 - 23 Oct 2008
+  * Major rewrite. Beware! Backwards incompatible!
+    Everything is changed, except for the core idea.
+    This release should make it really easy to create DOM based objects.
+
 0.00004 - 12 Aug 2008
   * Refactored the core accessor functionality into MooseX::DOM::Meta::LibXML.
     Most of the generated accessors are now proxies to the meta class.

@@ -1,12 +1,12 @@
 ---
-abstract: 'Simplistic Object XML Mapper'
+abstract: 'Easily Create DOM Based Objects'
 author:
   - 'Daisuke Maki C<< <daisuke@endeworks.jp> >>'
 build_requires:
   Test::More: 0
   Test::UseAllModules: 0
 distribution_type: module
-generated_by: 'Module::Install version 0.76'
+generated_by: 'Module::Install version 0.77'
 license: perl
 meta-spec:
   url: http://module-build.sourceforge.net/META-spec-v1.4.html
@@ -17,10 +17,9 @@ no_index:
     - inc
     - t
 requires:
-  Class::Inspector: 0
   Moose: 0
-  XML::LibXML: 1.63
-  XML::LibXML::XPathContext: 0
+  XML::LibXML: 0
+  perl: 5.8.0
 resources:
   license: http://dev.perl.org/licenses/
-version: 0.00004
+version: 0.00999

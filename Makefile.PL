@@ -4,13 +4,12 @@ use inc::Module::Install;
 name('MooseX-DOM');
 all_from('lib/MooseX/DOM.pm');
 
-requires 'Class::Inspector';
 requires 'Moose';
-requires 'XML::LibXML', 1.63;
-requires 'XML::LibXML::XPathContext';
+requires 'XML::LibXML';
 
 test_requires 'Test::More';
 test_requires 'Test::UseAllModules';
 
-auto_include;
+auto_include_deps;
 WriteAll;
+
