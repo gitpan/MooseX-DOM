@@ -14,8 +14,13 @@ lib/MooseX/DOM.pm
 lib/MooseX/DOM/LibXML.pm
 lib/MooseX/DOM/LibXML/XPathContext.pm
 lib/MooseX/DOM/Meta/Class.pm
+lib/MooseX/DOM/Meta/LibXML.pm
 Makefile.PL
 MANIFEST			This list of files
 META.yml
-t/01_basic.t
+t/99-pod-coverage.t
+t/99-pod.t
 t/lib/Test/MooseX/DOM/Recipe001.pm
+t/lib/Test/MooseX/DOM/Recipe002.pm
+t/recipe/001.t
+t/recipe/002.t

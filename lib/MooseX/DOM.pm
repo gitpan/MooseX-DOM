@@ -1,4 +1,4 @@
-# $Id: /mirror/coderepos/lang/perl/MooseX-DOM/trunk/lib/MooseX/DOM.pm 88873 2008-10-23T15:34:02.795690Z daisuke  $
+# $Id: /mirror/coderepos/lang/perl/MooseX-DOM/trunk/lib/MooseX/DOM.pm 89522 2008-10-28T01:36:10.445014Z daisuke  $
 
 package MooseX::DOM;
 use strict;
@@ -13,14 +13,28 @@ sub import {
     my $class = shift;
     my $caller = caller();
 
-    my $backend = 'MooseX::DOM::LibXML';
-    Class::MOP::load_class($backend);
+    my $metaclass = 'MooseX::DOM::Meta::LibXML';
+    Class::MOP::load_class($metaclass);
 
-    Moose::Util::MetaRole::apply_metaclass_roles(
+    my $meta = Moose::Util::MetaRole::apply_metaclass_roles(
         for_class => $caller,
-        metaclass_roles => [ 'MooseX::DOM::Meta::Class' ]
+        metaclass_roles => [ $metaclass ]
     );
-    $backend->setup($caller);
+
+    if (grep { $_ eq 'BUILDARGS' } @_) {
+        $meta->add_method('BUILDARGS' => Moose::Meta::Method->wrap(
+            package_name => $caller,
+            name         => 'BUILDARGS',
+            body         => sub {
+                my $class = shift;
+                if (@_ == 1 && ref $_[0] ne 'HASH') {
+                    unshift @_, 'dom_root';
+                }
+                return {@_};
+            }
+        ));
+    }
+
     $class->export_keywords($caller);
 }
 
@@ -69,6 +83,10 @@ sub build_dom_value {
 
         my $fetch = $args->{fetch};
         my $fetch_xpath = $fetch->{xpath} || $name;
+
+        Carp::confess "name must not contain special characters '$name'"
+            if $name !~ /^[\w_]+$/;
+
         my $meta = $caller->meta;
         $meta->add_method(
             $name,
@@ -90,6 +108,8 @@ sub build_dom_nodes {
     return sub {
         my $name = shift;
         my $args = { @_ == 1 ? (fetch => $_[0]) : @_ };
+        Carp::confess "name must not contain special characters '$name'"
+            if $name !~ /^[\w_]+$/;
 
         $args->{into} = $caller;
         my @methods = (
@@ -131,7 +151,7 @@ sub build_dom_nodes_appender {
 sub build_dom_nodes_accessor {
     my ($class, $name, $args) = @_;
 
-    my $fetch = $args->{fetch};
+    my $fetch = $args->{fetch} || $name;
     my $store = $args->{store};
 
     if (! ref $fetch) {
@@ -175,7 +195,7 @@ sub build_dom_fetchnodes {
         my $args = {@_ == 1 ? (xpath => $_[0]) : @_};
         my $filter = $args->{filter};
         my $xpath  = $args->{xpath};
-        return $filter ?
+        return ($filter ?
             sub {
                 my $self = shift;
                 return $filter->($self->dom_root->findnodes($xpath));
@@ -184,6 +204,7 @@ sub build_dom_fetchnodes {
                 my $self = shift;
                 return $self->dom_root->findnodes($xpath);
             }
+        );
     };
 }
 
@@ -263,7 +284,7 @@ MooseX::DOM - Easily Create DOM Based Objects
 MooseX::DOM is a tool that allows you to define classes that are based on
 XML DOM.
 
-=head1 PROVIDED DSL
+=head1 DSL PROVIDED TO SETUP YOUR CLASS
 
 The following DSL is provided upon calling C<MooseX::DOM>. When 
 C<no MooseX::DOM> is used, these functions are removed from your namespace.
@@ -290,7 +311,7 @@ Creates a closure that fetches some nodes
 
 Creates a closure that transforms nodes to something else, typically an object.
 
-=head1 PROVIDED METHODS
+=head1 METHODS AUTOMATICALLY PROVIDED TO YOUR CLASS
 
 The following methods are built onto your class automatically.
 
@@ -310,6 +331,39 @@ Does a DOM XPath lookup. Returns a plain DOM object.
 =head2 dom_findvalue($xpath)
 
 Does a DOM XPath lookup. Returns whatever value the XPath results to.
+
+=head1 MooseX::DOM METHODS
+
+=head2 build_dom_fetchnodes
+
+=head2 build_dom_nodes
+
+=head2 build_dom_nodes_accessor
+
+=head2 build_dom_nodes_appender
+
+=head2 build_dom_to_class
+
+=head2 build_dom_value
+
+=head2 export_keywords
+
+=head2 unexport_keywords
+
+=head2 unimport
+
+=head1 DEFAULT BUILDARGS
+
+By default dom_to_class() gives your object a single DOM element to play
+with. This is a problem if your class is a MooseX::DOM object and it doesn't
+already handle single argument constructors. In such cases, a simple
+builtin BUILDARGS can be provided for you. Simply do
+
+    package MyObject;
+    use Moose;
+    use MooseX::DOM qw(BUILDARGS);
+
+Which will install a default BUILDARGS method for your class.
 
 =head1 AUTHOR
 

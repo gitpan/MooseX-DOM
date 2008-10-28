@@ -1,6 +1,11 @@
 Changes
 =======
 
+0.00999_02 - 28 Oct 2008
+  * Use metaclasses to initialize the caller class.
+  * Add option to provide a default BUILDARGS
+  * Add docs
+
 0.00999_01 - 23 Oct 2008
   * Major rewrite. Beware! Backwards incompatible!
     Everything is changed, except for the core idea.

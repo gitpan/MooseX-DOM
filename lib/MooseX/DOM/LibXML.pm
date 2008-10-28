@@ -1,8 +1,8 @@
-# $Id: /mirror/coderepos/lang/perl/MooseX-DOM/trunk/lib/MooseX/DOM/LibXML.pm 88873 2008-10-23T15:34:02.795690Z daisuke  $
+# $Id: /mirror/coderepos/lang/perl/MooseX-DOM/trunk/lib/MooseX/DOM/LibXML.pm 89522 2008-10-28T01:36:10.445014Z daisuke  $
 
 package MooseX::DOM::LibXML;
 # I want to use MooseX::Singleton, but it generates some warnings,
-# so thi is a plain moose class with package level global
+# so this is a plain moose class with package level global
 use Moose;
 use MooseX::DOM::LibXML::XPathContext;
 
@@ -32,14 +32,15 @@ no Moose;
 
 our $INSTANCE;
 
-sub setup {
-    my ($class, $caller) = @_;
+sub instance {
+    my $class = shift;
+    return $INSTANCE ||= $class->new();
+}
 
-    my $meta = $caller->meta;
-    my $self = ($INSTANCE ||= $class->new());
+sub setup {
+    my ($self, $meta) = @_;
     $self->add_attributes($meta);
     $self->add_methods($meta);
-    $meta->backend($self);
 }
 
 sub add_attributes {
@@ -122,3 +123,23 @@ sub build_dom_findnodes_method {
 }
 
 1;
+
+__END__
+
+=head1 NAME
+
+MooseX::DOM::LibXML - LibXML Backend
+
+=head1 METHODS
+
+=head2 add_attributes
+=head2 add_methods
+=head2 build_dom_findnodes_method
+=head2 build_dom_findvalue_method
+=head2 build_dom_root_attr
+=head2 build_parse_file_method
+=head2 build_parse_string_method
+=head2 instance
+=head2 setup
+
+=cut

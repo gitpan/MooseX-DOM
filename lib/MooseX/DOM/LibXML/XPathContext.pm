@@ -1,4 +1,4 @@
-# $Id: /mirror/coderepos/lang/perl/MooseX-DOM/trunk/lib/MooseX/DOM/LibXML/XPathContext.pm 88873 2008-10-23T15:34:02.795690Z daisuke  $
+# $Id: /mirror/coderepos/lang/perl/MooseX-DOM/trunk/lib/MooseX/DOM/LibXML/XPathContext.pm 89522 2008-10-28T01:36:10.445014Z daisuke  $
 
 package MooseX::DOM::LibXML::XPathContext;
 use Moose;
@@ -33,7 +33,6 @@ has 'node' => (
 has 'xpathcontext' => (
     is => 'rw',     
     isa => 'XML::LibXML::XPathContext',
-    handles => [ qw(findnodes findvalue) ]
 );          
         
 __PACKAGE__->meta->make_immutable;
@@ -47,4 +46,30 @@ sub BUILDARGS {
     return \%args;
 }
 
+sub findnodes {
+    my ($self, $xpath) = @_;
+    Carp::confess "no xpath specified to findnodes" unless $xpath;
+    $self->xpathcontext->findnodes($xpath);
+}
+
+sub findvalue {
+    my ($self, $xpath) = @_;
+    Carp::confess "no xpath specified to findvalue" unless $xpath;
+    $self->xpathcontext->findvalue($xpath);
+}
+
 1;
+
+__END__
+
+=head1 NAMe
+
+MooseX::DOM::LibXML::XPathContext - Wrapper For DOM Nodes
+
+=head1 METHODS
+
+=head2 findnodes
+
+=head2 findvalue
+
+=cut
